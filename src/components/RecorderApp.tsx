@@ -451,8 +451,8 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
       canvas.height = canvasHeight;
       const ctx = canvas.getContext('2d');
 
-      // Trigger screen share if mode === 'screen' or 'both'
-      if ((mode === 'screen' || mode === 'both') && typeof navigator !== 'undefined' && navigator.mediaDevices?.getDisplayMedia) {
+      // Trigger screen share if mode === 'screen' or 'both' or (mode === 'reaction' && embeddedEmbedUrl)
+      if ((mode === 'screen' || mode === 'both' || (mode === 'reaction' && embeddedEmbedUrl)) && typeof navigator !== 'undefined' && navigator.mediaDevices?.getDisplayMedia) {
         try {
           const displayStream = await navigator.mediaDevices.getDisplayMedia({
             video: { frameRate: fps },
@@ -470,26 +470,31 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
           };
         } catch (dispErr: any) {
           console.warn('Screen capture fallback rejected or cancelled:', dispErr);
-          if (mode === 'screen') {
-            throw new Error('Screen capture permission was cancelled or restricted.');
+          if (mode === 'screen' || (mode === 'reaction' && embeddedEmbedUrl)) {
+            throw new Error('Screen capture permission is required to record YouTube or embed reaction videos.');
           }
         }
       }
 
       // Auto play reaction video if present
-      if (mode === 'reaction' && socialVideoRef.current) {
-        try {
-          socialVideoRef.current.currentTime = 0;
-          await socialVideoRef.current.play();
-          setIsVideoPlaying(true);
-        } catch (pErr) {
-          console.warn('Unmuted auto play blocked, playing muted for video stream:', pErr);
+      if (mode === 'reaction') {
+        if (!resolvedVideoSrc && !embeddedEmbedUrl) {
+          throw new Error('Please paste a video URL or upload a video file to record a reaction.');
+        }
+        if (resolvedVideoSrc && socialVideoRef.current) {
           try {
-            socialVideoRef.current.muted = true;
+            socialVideoRef.current.currentTime = 0;
             await socialVideoRef.current.play();
             setIsVideoPlaying(true);
-          } catch (mErr) {
-            console.warn('Reaction video play error:', mErr);
+          } catch (pErr) {
+            console.warn('Unmuted auto play blocked, playing muted for video stream:', pErr);
+            try {
+              socialVideoRef.current.muted = true;
+              await socialVideoRef.current.play();
+              setIsVideoPlaying(true);
+            } catch (mErr) {
+              console.warn('Reaction video play error:', mErr);
+            }
           }
         }
       }
@@ -558,13 +563,13 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
               console.warn('Video canvas draw warning:', vidDrawErr);
             }
           } else {
-            // Sleek dark background when no reaction video stream is loaded - DO NOT duplicate camera in background
+            // Sleek dark background when video stream is loading
             ctx.fillStyle = '#0F0F12';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
           }
 
-          // Draw camera PIP overlay if active video background is present or mode is 'both'
-          if ((activeVideoElem || mode === 'both' || mode === 'reaction') && cameraPreviewRef.current && (cameraPreviewRef.current.videoWidth > 0 || cameraPreviewRef.current.readyState >= 1)) {
+          // Draw camera PIP overlay ONLY if active video background is present or mode is 'both' (NEVER duplicate camera in background)
+          if ((activeVideoElem || mode === 'both') && cameraPreviewRef.current && (cameraPreviewRef.current.videoWidth > 0 || cameraPreviewRef.current.readyState >= 1)) {
             try {
               const pipWidth = canvas.width * (pipSize / 100);
               const pipHeight = pipShape === 'circle' ? pipWidth : canvas.height * (pipSize / 100) * 0.75;
