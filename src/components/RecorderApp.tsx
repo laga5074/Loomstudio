@@ -557,30 +557,10 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
             } catch (vidDrawErr) {
               console.warn('Video canvas draw warning:', vidDrawErr);
             }
-          } else if (cameraPreviewRef.current && (cameraPreviewRef.current.videoWidth > 0 || cameraPreviewRef.current.readyState >= 1)) {
-            // Draw camera in background if no reaction video is loaded
-            try {
-              const vW = cameraPreviewRef.current.videoWidth || canvas.width;
-              const vH = cameraPreviewRef.current.videoHeight || canvas.height;
-              const vAspect = vW / vH;
-              const cAspect = canvas.width / canvas.height;
-
-              let dW = canvas.width;
-              let dH = canvas.height;
-              let dX = 0;
-              let dY = 0;
-
-              if (vAspect > cAspect) {
-                dH = canvas.width / vAspect;
-                dY = (canvas.height - dH) / 2;
-              } else {
-                dW = canvas.height * vAspect;
-                dX = (canvas.width - dW) / 2;
-              }
-              ctx.drawImage(cameraPreviewRef.current, dX, dY, dW, dH);
-            } catch (bgCamErr) {
-              console.warn('Background camera draw warning:', bgCamErr);
-            }
+          } else {
+            // Sleek dark background when no reaction video stream is loaded - DO NOT duplicate camera in background
+            ctx.fillStyle = '#0F0F12';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
           }
 
           // Draw camera PIP overlay if active video background is present or mode is 'both'
