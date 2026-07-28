@@ -319,6 +319,21 @@ async function resolveDirectVideoMedia(rawUrl: string): Promise<string | null> {
     }
   }
 
+  // Options preflight for CORS on proxy endpoints
+  app.options('/api/proxy-video', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type');
+    res.sendStatus(204);
+  });
+
+  app.options('/api/stream-youtube', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type');
+    res.sendStatus(204);
+  });
+
   // API 3: Proxy Video with CORS headers so canvas can record without taint
   app.get('/api/proxy-video', (req, res) => {
     const targetUrl = req.query.url as string;

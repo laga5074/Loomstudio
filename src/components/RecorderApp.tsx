@@ -106,6 +106,7 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraPreviewRef = useRef<HTMLVideoElement | null>(null);
   const socialVideoRef = useRef<HTMLVideoElement | null>(null);
+  const screenVideoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // Helper to get best available camera stream with robust mobile front/back and device selection support
@@ -451,100 +452,142 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
         canvas.height = canvasHeight;
         const ctx = canvas.getContext('2d');
 
-        // Ensure reaction video plays automatically on capture start
-        if (mode === 'reaction' && socialVideoRef.current) {
-          try {
-            socialVideoRef.current.muted = false;
-            await socialVideoRef.current.play();
-            setIsVideoPlaying(true);
-          } catch (pErr) {
-            console.warn('Auto play reaction video warning:', pErr);
+        // Check if social video element is ready or if we need tab screen capture (for iframe embed or missing stream)
+        if (mode === 'reaction') {
+          if (socialVideoRef.current && (socialVideoRef.current.videoWidth > 0 || socialVideoRef.current.readyState >= 1)) {
+            try {
+              socialVideoRef.current.muted = false;
+              await socialVideoRef.current.play();
+              setIsVideoPlaying(true);
+            } catch (pErr) {
+              console.warn('Auto play reaction video warning:', pErr);
+            }
+          } else if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
+            // Screen / Tab capture fallback for embedded iframe videos or unstreamable links
+            try {
+              const displayStream = await navigator.mediaDevices.getDisplayMedia({
+                video: { displaySurface: 'browser' } as any,
+                audio: true,
+              });
+              screenStreamRef.current = displayStream;
+
+              let hiddenVid = screenVideoRef.current;
+              if (!hiddenVid) {
+                hiddenVid = document.createElement('video');
+                hiddenVid.autoplay = true;
+                hiddenVid.muted = true;
+                hiddenVid.playsInline = true;
+                screenVideoRef.current = hiddenVid;
+              }
+              hiddenVid.srcObject = displayStream;
+              await hiddenVid.play().catch(() => {});
+            } catch (dispErr) {
+              console.warn('Tab screen capture fallback rejected or cancelled:', dispErr);
+            }
           }
         }
 
         const drawFrame = () => {
           if (!ctx) return;
-          // Background fill - pure black (NO text, NO watermark)
+          // Background fill - pure black base
           ctx.fillStyle = '#000000';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
 
           if (mode === 'camera') {
             // Draw full camera feed on canvas with contain fit
             if (cameraPreviewRef.current && (cameraPreviewRef.current.videoWidth > 0 || cameraPreviewRef.current.readyState >= 1)) {
-              const vW = cameraPreviewRef.current.videoWidth || canvas.width;
-              const vH = cameraPreviewRef.current.videoHeight || canvas.height;
-              const vAspect = vW / vH;
-              const cAspect = canvas.width / canvas.height;
+              try {
+                const vW = cameraPreviewRef.current.videoWidth || canvas.width;
+                const vH = cameraPreviewRef.current.videoHeight || canvas.height;
+                const vAspect = vW / vH;
+                const cAspect = canvas.width / canvas.height;
 
-              let dW = canvas.width;
-              let dH = canvas.height;
-              let dX = 0;
-              let dY = 0;
+                let dW = canvas.width;
+                let dH = canvas.height;
+                let dX = 0;
+                let dY = 0;
 
-              if (vAspect > cAspect) {
-                dH = canvas.width / vAspect;
-                dY = (canvas.height - dH) / 2;
-              } else {
-                dW = canvas.height * vAspect;
-                dX = (canvas.width - dW) / 2;
+                if (vAspect > cAspect) {
+                  dH = canvas.width / vAspect;
+                  dY = (canvas.height - dH) / 2;
+                } else {
+                  dW = canvas.height * vAspect;
+                  dX = (canvas.width - dW) / 2;
+                }
+                ctx.drawImage(cameraPreviewRef.current, dX, dY, dW, dH);
+              } catch (camDrawErr) {
+                console.warn('Camera draw warning:', camDrawErr);
               }
-              ctx.drawImage(cameraPreviewRef.current, dX, dY, dW, dH);
             }
           } else {
-            // Reaction Mode: Draw social video element centered with contain fit
-            if (socialVideoRef.current && (socialVideoRef.current.videoWidth > 0 || socialVideoRef.current.readyState >= 1)) {
-              const vW = socialVideoRef.current.videoWidth || canvas.width;
-              const vH = socialVideoRef.current.videoHeight || canvas.height;
-              const vAspect = vW / vH;
-              const cAspect = canvas.width / canvas.height;
+            // Reaction Mode: Draw social video element OR screen video element centered with contain fit
+            const activeVideoElem = (socialVideoRef.current && (socialVideoRef.current.videoWidth > 0 || socialVideoRef.current.readyState >= 1))
+              ? socialVideoRef.current
+              : (screenVideoRef.current && (screenVideoRef.current.videoWidth > 0 || screenVideoRef.current.readyState >= 1))
+                ? screenVideoRef.current
+                : null;
 
-              let dW = canvas.width;
-              let dH = canvas.height;
-              let dX = 0;
-              let dY = 0;
+            if (activeVideoElem) {
+              try {
+                const vW = activeVideoElem.videoWidth || canvas.width;
+                const vH = activeVideoElem.videoHeight || canvas.height;
+                const vAspect = vW / vH;
+                const cAspect = canvas.width / canvas.height;
 
-              if (vAspect > cAspect) {
-                dH = canvas.width / vAspect;
-                dY = (canvas.height - dH) / 2;
-              } else {
-                dW = canvas.height * vAspect;
-                dX = (canvas.width - dW) / 2;
+                let dW = canvas.width;
+                let dH = canvas.height;
+                let dX = 0;
+                let dY = 0;
+
+                if (vAspect > cAspect) {
+                  dH = canvas.width / vAspect;
+                  dY = (canvas.height - dH) / 2;
+                } else {
+                  dW = canvas.height * vAspect;
+                  dX = (canvas.width - dW) / 2;
+                }
+                ctx.drawImage(activeVideoElem, dX, dY, dW, dH);
+              } catch (vidDrawErr) {
+                console.warn('Social video canvas draw warning:', vidDrawErr);
               }
-              ctx.drawImage(socialVideoRef.current, dX, dY, dW, dH);
             }
 
             // Draw camera PIP overlay (NO text, NO watermark)
             if (cameraPreviewRef.current && cameraPreviewRef.current.readyState >= 2) {
-              const pipWidth = canvas.width * (pipSize / 100);
-              const pipHeight = pipShape === 'circle' ? pipWidth : canvas.height * (pipSize / 100) * 0.75;
-              const pipX = canvas.width * (pipPosition.x / 100);
-              const pipY = canvas.height * (pipPosition.y / 100);
+              try {
+                const pipWidth = canvas.width * (pipSize / 100);
+                const pipHeight = pipShape === 'circle' ? pipWidth : canvas.height * (pipSize / 100) * 0.75;
+                const pipX = canvas.width * (pipPosition.x / 100);
+                const pipY = canvas.height * (pipPosition.y / 100);
 
-              ctx.save();
-              if (pipShape === 'circle') {
-                ctx.beginPath();
-                ctx.arc(pipX + pipWidth / 2, pipY + pipWidth / 2, pipWidth / 2, 0, Math.PI * 2);
-                ctx.closePath();
-                ctx.clip();
-              } else if (pipShape === 'rounded') {
-                ctx.beginPath();
-                ctx.roundRect(pipX, pipY, pipWidth, pipHeight, 24);
-                ctx.closePath();
-                ctx.clip();
-              }
+                ctx.save();
+                if (pipShape === 'circle') {
+                  ctx.beginPath();
+                  ctx.arc(pipX + pipWidth / 2, pipY + pipWidth / 2, pipWidth / 2, 0, Math.PI * 2);
+                  ctx.closePath();
+                  ctx.clip();
+                } else if (pipShape === 'rounded') {
+                  ctx.beginPath();
+                  ctx.roundRect(pipX, pipY, pipWidth, pipHeight, 24);
+                  ctx.closePath();
+                  ctx.clip();
+                }
 
-              ctx.drawImage(cameraPreviewRef.current, pipX, pipY, pipWidth, pipHeight);
+                ctx.drawImage(cameraPreviewRef.current, pipX, pipY, pipWidth, pipHeight);
 
-              // Border
-              ctx.restore();
-              ctx.lineWidth = 6;
-              ctx.strokeStyle = '#00FF9D';
-              if (pipShape === 'circle') {
-                ctx.beginPath();
-                ctx.arc(pipX + pipWidth / 2, pipY + pipWidth / 2, pipWidth / 2, 0, Math.PI * 2);
-                ctx.stroke();
-              } else {
-                ctx.strokeRect(pipX, pipY, pipWidth, pipHeight);
+                // Border
+                ctx.restore();
+                ctx.lineWidth = 6;
+                ctx.strokeStyle = '#00FF9D';
+                if (pipShape === 'circle') {
+                  ctx.beginPath();
+                  ctx.arc(pipX + pipWidth / 2, pipY + pipWidth / 2, pipWidth / 2, 0, Math.PI * 2);
+                  ctx.stroke();
+                } else {
+                  ctx.strokeRect(pipX, pipY, pipWidth, pipHeight);
+                }
+              } catch (pipDrawErr) {
+                console.warn('PIP draw warning:', pipDrawErr);
               }
             }
           }
@@ -556,7 +599,7 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
 
         const canvasStream = canvas.captureStream(fps);
 
-        // Mix mic audio and reaction video audio together
+        // Mix mic audio, reaction video audio, and screen capture audio together
         try {
           const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
           if (AudioContextClass) {
@@ -576,8 +619,18 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
               micSource.connect(dest);
             }
 
+            // Screen audio track if tab/window capture active
+            if (screenStreamRef.current && screenStreamRef.current.getAudioTracks().length > 0) {
+              try {
+                const screenAudioSource = audioCtx.createMediaStreamSource(screenStreamRef.current);
+                screenAudioSource.connect(dest);
+              } catch (sErr) {
+                console.warn('Screen audio source warning:', sErr);
+              }
+            }
+
             // Reaction Video audio
-            if (socialVideoRef.current) {
+            if (socialVideoRef.current && socialVideoRef.current.src) {
               if (!videoAudioSourceRef.current) {
                 try {
                   videoAudioSourceRef.current = audioCtx.createMediaElementSource(socialVideoRef.current);
@@ -977,7 +1030,7 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
                   autoPlay
                   muted
                   playsInline
-                  crossOrigin="anonymous"
+                  crossOrigin={resolvedVideoSrc.startsWith('blob:') || resolvedVideoSrc.startsWith('data:') ? undefined : 'anonymous'}
                   onLoadedMetadata={(e) => e.currentTarget.play().catch(() => {})}
                   onCanPlay={(e) => e.currentTarget.play().catch(() => {})}
                   onError={() => {
@@ -987,13 +1040,20 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
                   className="w-full h-full object-contain bg-black"
                 />
               ) : embeddedEmbedUrl ? (
-                <iframe
-                  src={embeddedEmbedUrl}
-                  title="Target Reaction Video"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                  allowFullScreen
-                  className="w-full h-full border-0 bg-black"
-                />
+                <div className="relative w-full h-full">
+                  <iframe
+                    src={embeddedEmbedUrl}
+                    title="Target Reaction Video"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowFullScreen
+                    className="w-full h-full border-0 bg-black"
+                  />
+                  <div className="absolute top-2 left-2 z-10 pointer-events-none">
+                    <span className="px-2.5 py-1 rounded-md bg-black/80 border border-[#00FF9D]/40 text-[#00FF9D] text-[10px] font-bold uppercase tracking-wider shadow-lg backdrop-blur-sm">
+                      Embed Player Sync Active
+                    </span>
+                  </div>
+                </div>
               ) : (
                 <div className="flex flex-col items-center justify-center p-8 text-center space-y-3 z-10">
                   <div className="w-12 h-12 rounded-2xl bg-[#00FF9D]/10 border border-[#00FF9D]/30 flex items-center justify-center text-[#00FF9D]">

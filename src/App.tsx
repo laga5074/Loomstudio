@@ -21,8 +21,9 @@ export default function App() {
   const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState<boolean>(false);
   const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
 
-  // Sync count of saved recordings
+  // Sync count of saved recordings and close player popup on tab change
   useEffect(() => {
+    setActiveSelectedRecording(null);
     const loadCount = async () => {
       try {
         const items = await dbService.getAllRecordings();
