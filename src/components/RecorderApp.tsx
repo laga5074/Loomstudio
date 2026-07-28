@@ -484,26 +484,40 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
             // Screen / Tab capture fallback for embedded iframe videos (YouTube, TikTok, Instagram, Facebook) or unstreamable links
             try {
               const displayStream = await navigator.mediaDevices.getDisplayMedia({
-                video: {
-                  displaySurface: 'browser',
-                  width: { ideal: 1920 },
-                  height: { ideal: 1080 },
-                } as any,
-                audio: true,
-                preferCurrentTab: true,
-              } as any);
+                video: true,
+                audio: systemAudioEnabled,
+              });
               screenStreamRef.current = displayStream;
 
               if (screenVideoRef.current) {
                 screenVideoRef.current.srcObject = displayStream;
                 await screenVideoRef.current.play().catch(() => {});
+
+                // Wait for video frames to be decoded
+                await new Promise<void>((resolve) => {
+                  if (screenVideoRef.current && screenVideoRef.current.videoWidth > 0) {
+                    resolve();
+                    return;
+                  }
+                  const checkInterval = setInterval(() => {
+                    if (screenVideoRef.current && screenVideoRef.current.videoWidth > 0) {
+                      clearInterval(checkInterval);
+                      resolve();
+                    }
+                  }, 100);
+                  setTimeout(() => {
+                    clearInterval(checkInterval);
+                    resolve();
+                  }, 3000);
+                });
               }
 
               displayStream.getVideoTracks()[0].onended = () => {
                 stopRecording();
               };
-            } catch (dispErr) {
+            } catch (dispErr: any) {
               console.warn('Tab screen capture fallback rejected or cancelled:', dispErr);
+              throw new Error(dispErr?.message || 'Screen capture permission was denied or cancelled.');
             }
           }
         }
@@ -715,10 +729,12 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
       }
 
       // 3. MediaRecorder Setup
-      const mimeType = MediaRecorder.isTypeSupported('video/mp4')
+      const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+        ? 'video/webm;codecs=vp9,opus'
+        : MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
+        ? 'video/webm;codecs=vp8,opus'
+        : MediaRecorder.isTypeSupported('video/mp4')
         ? 'video/mp4'
-        : MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-        ? 'video/webm;codecs=vp9'
         : 'video/webm';
 
       const recorder = new MediaRecorder(finalStream, { mimeType });
@@ -733,7 +749,7 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
       recorder.onstop = async () => {
         if (canvasAnimRef.current) cancelAnimationFrame(canvasAnimRef.current);
 
-        const blob = new Blob(recordedChunksRef.current, { type: 'video/mp4' });
+        const blob = new Blob(recordedChunksRef.current, { type: mimeType });
         const recordId = 'rec_' + Date.now();
         const durationSec = Math.max(elapsedSeconds, 1);
 
@@ -1023,13 +1039,22 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
               </div>
             )}
 
-            {/* Hidden Video Element for Active Screen/Tab Share Capture */}
+            {/* Screen capture sink — MUST stay active in DOM and not be display:none */}
             <video
               ref={screenVideoRef}
               autoPlay
               muted
               playsInline
-              className="fixed -top-[9999px] -left-[9999px] w-px h-px opacity-0 pointer-events-none"
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '1px',
+                height: '1px',
+                opacity: 0,
+                pointerEvents: 'none',
+                zIndex: -1,
+              }}
             />
 
             {/* Display for Social Reaction Video */}
