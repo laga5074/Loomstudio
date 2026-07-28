@@ -455,33 +455,41 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
         // Check if social video element is ready and non-tainted, or trigger tab screen capture for iframe embeds
         let canDrawDirectVideo = false;
         if (mode === 'reaction') {
-          if (socialVideoRef.current && (socialVideoRef.current.videoWidth > 0 || socialVideoRef.current.readyState >= 1) && !embeddedEmbedUrl) {
-            try {
-              const testCanvas = document.createElement('canvas');
-              testCanvas.width = 1;
-              testCanvas.height = 1;
-              const testCtx = testCanvas.getContext('2d');
-              if (testCtx) {
-                testCtx.drawImage(socialVideoRef.current, 0, 0, 1, 1);
-                testCtx.getImageData(0, 0, 1, 1);
-                canDrawDirectVideo = true;
+          if (resolvedVideoSrc) {
+            if (resolvedVideoSrc.startsWith('blob:') || resolvedVideoSrc.startsWith('data:') || resolvedVideoSrc.startsWith('/api/')) {
+              canDrawDirectVideo = true;
+            } else if (socialVideoRef.current) {
+              try {
+                if (socialVideoRef.current.videoWidth > 0) {
+                  const testCanvas = document.createElement('canvas');
+                  testCanvas.width = 1;
+                  testCanvas.height = 1;
+                  const testCtx = testCanvas.getContext('2d');
+                  if (testCtx) {
+                    testCtx.drawImage(socialVideoRef.current, 0, 0, 1, 1);
+                    testCtx.getImageData(0, 0, 1, 1);
+                    canDrawDirectVideo = true;
+                  }
+                } else {
+                  canDrawDirectVideo = true;
+                }
+              } catch (taintErr) {
+                console.warn('Social video canvas is tainted by CORS:', taintErr);
+                canDrawDirectVideo = false;
               }
-            } catch (taintErr) {
-              console.warn('Social video canvas is tainted by CORS, activating tab screen capture fallback:', taintErr);
-              canDrawDirectVideo = false;
             }
           }
 
           if (canDrawDirectVideo && socialVideoRef.current) {
             try {
               socialVideoRef.current.muted = false;
-              await socialVideoRef.current.play();
+              await socialVideoRef.current.play().catch(() => {});
               setIsVideoPlaying(true);
             } catch (pErr) {
               console.warn('Auto play reaction video warning:', pErr);
             }
-          } else if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
-            // Screen / Tab capture fallback for embedded iframe videos (YouTube, TikTok, Instagram, Facebook) or unstreamable links
+          } else if (embeddedEmbedUrl && typeof navigator !== 'undefined' && navigator.mediaDevices?.getDisplayMedia) {
+            // Screen / Tab capture fallback ONLY if YouTube/TikTok iframe embed is active
             try {
               const displayStream = await navigator.mediaDevices.getDisplayMedia({
                 video: true,
@@ -517,15 +525,14 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
               };
             } catch (dispErr: any) {
               console.warn('Tab screen capture fallback rejected or cancelled:', dispErr);
-              throw new Error(dispErr?.message || 'Screen capture permission was denied or cancelled.');
             }
           }
         }
 
         const drawFrame = () => {
           if (!ctx) return;
-          // Background fill - pure black base
-          ctx.fillStyle = '#000000';
+          // Background fill - pure dark base
+          ctx.fillStyle = '#0F0F12';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
 
           if (mode === 'camera') {
@@ -555,7 +562,7 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
               }
             }
           } else {
-            // Reaction Mode: Draw social video element OR screen video element centered with contain fit
+            // Reaction Mode: Draw social video element OR screen video element OR center camera fallback
             const activeVideoElem = (canDrawDirectVideo && socialVideoRef.current && (socialVideoRef.current.videoWidth > 0 || socialVideoRef.current.readyState >= 1))
               ? socialVideoRef.current
               : (screenVideoRef.current && (screenVideoRef.current.videoWidth > 0 || screenVideoRef.current.readyState >= 1))
@@ -585,10 +592,34 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
               } catch (vidDrawErr) {
                 console.warn('Social video canvas draw warning:', vidDrawErr);
               }
+            } else if (cameraPreviewRef.current && (cameraPreviewRef.current.videoWidth > 0 || cameraPreviewRef.current.readyState >= 1)) {
+              // Draw camera in background if no reaction video is present
+              try {
+                const vW = cameraPreviewRef.current.videoWidth || canvas.width;
+                const vH = cameraPreviewRef.current.videoHeight || canvas.height;
+                const vAspect = vW / vH;
+                const cAspect = canvas.width / canvas.height;
+
+                let dW = canvas.width;
+                let dH = canvas.height;
+                let dX = 0;
+                let dY = 0;
+
+                if (vAspect > cAspect) {
+                  dH = canvas.width / vAspect;
+                  dY = (canvas.height - dH) / 2;
+                } else {
+                  dW = canvas.height * vAspect;
+                  dX = (canvas.width - dW) / 2;
+                }
+                ctx.drawImage(cameraPreviewRef.current, dX, dY, dW, dH);
+              } catch (bgCamErr) {
+                console.warn('Background camera draw warning:', bgCamErr);
+              }
             }
 
-            // Draw camera PIP overlay (NO text, NO watermark)
-            if (cameraPreviewRef.current && cameraPreviewRef.current.readyState >= 2) {
+            // Draw camera PIP overlay if active video background is present
+            if (activeVideoElem && cameraPreviewRef.current && (cameraPreviewRef.current.videoWidth > 0 || cameraPreviewRef.current.readyState >= 1)) {
               try {
                 const pipWidth = canvas.width * (pipSize / 100);
                 const pipHeight = pipShape === 'circle' ? pipWidth : canvas.height * (pipSize / 100) * 0.75;
@@ -665,7 +696,7 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
             }
 
             // Reaction Video audio
-            if (socialVideoRef.current && socialVideoRef.current.src) {
+            if (socialVideoRef.current && (socialVideoRef.current.src || socialVideoRef.current.currentSrc)) {
               if (!videoAudioSourceRef.current) {
                 try {
                   videoAudioSourceRef.current = audioCtx.createMediaElementSource(socialVideoRef.current);
@@ -728,16 +759,33 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
         }
       }
 
-      // 3. MediaRecorder Setup
-      const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
-        ? 'video/webm;codecs=vp9,opus'
-        : MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
-        ? 'video/webm;codecs=vp8,opus'
-        : MediaRecorder.isTypeSupported('video/mp4')
-        ? 'video/mp4'
-        : 'video/webm';
+      // 3. MediaRecorder Setup with Browser Compatibility Fallback
+      let selectedMimeType = '';
+      const candidateTypes = [
+        'video/mp4;codecs=avc1,mp4a.40.2',
+        'video/mp4;codecs=h264,aac',
+        'video/mp4',
+        'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=vp8,opus',
+        'video/webm',
+      ];
+      for (const t of candidateTypes) {
+        if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) {
+          selectedMimeType = t;
+          break;
+        }
+      }
 
-      const recorder = new MediaRecorder(finalStream, { mimeType });
+      let recorder: MediaRecorder;
+      try {
+        recorder = selectedMimeType
+          ? new MediaRecorder(finalStream, { mimeType: selectedMimeType })
+          : new MediaRecorder(finalStream);
+      } catch (recErr) {
+        console.warn('MediaRecorder with mimeType failed, initializing default recorder:', recErr);
+        recorder = new MediaRecorder(finalStream);
+      }
+
       mediaRecorderRef.current = recorder;
 
       recorder.ondataavailable = (event) => {
@@ -749,7 +797,8 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
       recorder.onstop = async () => {
         if (canvasAnimRef.current) cancelAnimationFrame(canvasAnimRef.current);
 
-        const blob = new Blob(recordedChunksRef.current, { type: mimeType });
+        const actualMime = recorder.mimeType || selectedMimeType || 'video/webm';
+        const blob = new Blob(recordedChunksRef.current, { type: actualMime });
         const recordId = 'rec_' + Date.now();
         const durationSec = Math.max(elapsedSeconds, 1);
 
@@ -760,7 +809,7 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
           fileSize: blob.size,
           resolution,
           fps,
-          mimeType: 'video/mp4',
+          mimeType: actualMime,
           createdAt: Date.now(),
           blob,
         };
@@ -775,7 +824,7 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
         setLastSavedItem(newRecording);
         onRecordingSaved(newRecording);
 
-        // Auto download MP4 file to user's device immediately
+        // Auto download MP4/WebM file to user's device immediately
         handleDownloadMp4(newRecording);
       };
 
@@ -820,7 +869,9 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
     const url = URL.createObjectURL(item.blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${item.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.mp4`;
+    const isMp4 = item.mimeType?.includes('mp4') || item.blob.type?.includes('mp4');
+    const ext = isMp4 ? 'mp4' : 'webm';
+    a.download = `${item.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.${ext}`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -1274,6 +1325,64 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
                 <Camera className="w-4 h-4" />
                 <span>Webcam Only</span>
               </button>
+            </div>
+          </div>
+
+          {/* Recording Quality & Resolution Section */}
+          <div className="space-y-3 pt-2 border-t border-white/10">
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-white/50">Recording Quality</label>
+              <span className="text-[10px] text-[#00FF9D] font-mono font-bold">{resolution} • {fps} FPS</span>
+            </div>
+
+            {/* Resolution Buttons Grid */}
+            <div className="grid grid-cols-4 gap-1.5">
+              {[
+                { id: '720p', label: '720p', sub: 'HD' },
+                { id: '1080p', label: '1080p', sub: 'FHD' },
+                { id: '1440p', label: '1440p', sub: '2K' },
+                { id: '4K', label: '4K', sub: 'Ultra HD' },
+              ].map((res) => (
+                <button
+                  key={res.id}
+                  onClick={() => setResolution(res.id as any)}
+                  className={`p-2 rounded-xl border text-center transition-all ${
+                    resolution === res.id
+                      ? 'bg-[#00FF9D]/10 border-[#00FF9D] text-[#00FF9D] shadow-lg shadow-[#00FF9D]/10 font-bold'
+                      : 'bg-[#16161A] border-white/10 text-white/60 hover:text-white font-medium'
+                  }`}
+                >
+                  <div className="font-extrabold text-xs">{res.label}</div>
+                  <div className="text-[8px] opacity-60 uppercase tracking-tight mt-0.5">{res.sub}</div>
+                </button>
+              ))}
+            </div>
+
+            {/* FPS Selector */}
+            <div className="flex items-center justify-between pt-1">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-white/50">Frame Rate</label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setFps(30)}
+                  className={`px-3 py-1 rounded-lg border text-[11px] font-bold transition-all ${
+                    fps === 30
+                      ? 'bg-[#00FF9D]/10 border-[#00FF9D] text-[#00FF9D]'
+                      : 'bg-[#16161A] border-white/10 text-white/50 hover:text-white'
+                  }`}
+                >
+                  30 FPS
+                </button>
+                <button
+                  onClick={() => setFps(60)}
+                  className={`px-3 py-1 rounded-lg border text-[11px] font-bold transition-all ${
+                    fps === 60
+                      ? 'bg-[#00FF9D]/10 border-[#00FF9D] text-[#00FF9D]'
+                      : 'bg-[#16161A] border-white/10 text-white/50 hover:text-white'
+                  }`}
+                >
+                  60 FPS ⚡
+                </button>
+              </div>
             </div>
           </div>
 
