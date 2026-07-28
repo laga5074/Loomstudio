@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   Video,
   Monitor,
@@ -63,6 +63,17 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
   const [resolvedVideoSrc, setResolvedVideoSrc] = useState<string>('');
   const [isResolvingVideo, setIsResolvingVideo] = useState<boolean>(false);
   const [isVideoPlaying, setIsVideoPlaying] = useState<boolean>(false);
+
+  // Automatically detect platform based on current URL
+  const detectedPlatform = useMemo(() => {
+    const trimmed = videoUrl.trim().toLowerCase();
+    if (!trimmed) return 'none';
+    if (trimmed.includes('youtube.com') || trimmed.includes('youtu.be')) return 'youtube';
+    if (trimmed.includes('tiktok.com')) return 'tiktok';
+    if (trimmed.includes('instagram.com')) return 'instagram';
+    if (trimmed.includes('facebook.com') || trimmed.includes('fb.watch')) return 'facebook';
+    return 'direct';
+  }, [videoUrl]);
 
   // Device lists
   const [videoDevices, setVideoDevices] = useState<MediaDeviceOption[]>([]);
@@ -817,8 +828,8 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
 
           {/* Social Media Link Bar for Reaction Mode */}
           {mode === 'reaction' && (
-            <div className="p-4 bg-[#0F0F12] border border-white/10 rounded-2xl space-y-3">
-              <div className="flex items-center justify-between">
+            <div className="p-3.5 sm:p-4 bg-[#0F0F12] border border-white/10 rounded-2xl space-y-3 shadow-xl">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-[#00FF9D] flex items-center gap-1.5">
                   <Link className="w-3.5 h-3.5" />
                   Target Reaction Video URL
@@ -826,48 +837,47 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
                 <span className="text-[10px] text-white/50">YouTube • TikTok • Instagram • Facebook • MP4</span>
               </div>
 
-              <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <input
                   type="text"
                   placeholder="Paste YouTube, TikTok, Instagram, Facebook, or MP4 link..."
                   value={videoUrl}
                   onChange={(e) => setVideoUrl(e.target.value)}
-                  className="flex-1 bg-[#0A0A0C] border border-white/15 rounded-xl px-3.5 py-2 text-xs text-white placeholder-white/40 focus:outline-none focus:border-[#00FF9D]"
+                  className="w-full sm:flex-1 bg-[#0A0A0C] border border-white/15 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-white/40 focus:outline-none focus:border-[#00FF9D] transition-colors"
                 />
-                <button
-                  onClick={handlePasteUrl}
-                  className="px-3.5 py-2 bg-white/10 hover:bg-white/20 border border-white/15 text-white font-bold text-xs uppercase tracking-wider rounded-xl flex items-center gap-1.5 transition-colors"
-                  title="Paste link from clipboard and load video"
-                >
-                  <Clipboard className="w-3.5 h-3.5 text-[#00FF9D]" />
-                  <span>Paste</span>
-                </button>
-                <label
-                  className="px-3.5 py-2 bg-white/10 hover:bg-white/20 border border-white/15 text-white font-bold text-xs uppercase tracking-wider rounded-xl flex items-center gap-1.5 cursor-pointer transition-colors"
-                  title="Upload local video file from computer"
-                >
-                  <Upload className="w-3.5 h-3.5 text-[#00FF9D]" />
-                  <span>Upload</span>
-                  <input type="file" accept="video/*" onChange={handleLocalFileUpload} className="hidden" />
-                </label>
-                <button
-                  onClick={() => processSocialUrl(videoUrl)}
-                  className="px-4 py-2 bg-[#00FF9D] text-black font-extrabold text-xs uppercase tracking-wider rounded-xl hover:bg-[#00FF9D]/90"
-                >
-                  Load
-                </button>
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <button
+                    onClick={handlePasteUrl}
+                    className="flex-1 sm:flex-initial px-3.5 py-2.5 bg-white/10 hover:bg-white/20 border border-white/15 text-white font-bold text-xs uppercase tracking-wider rounded-xl flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap"
+                    title="Paste link from clipboard and load video automatically"
+                  >
+                    <Clipboard className="w-3.5 h-3.5 text-[#00FF9D]" />
+                    <span>Paste</span>
+                  </button>
+                  <label
+                    className="flex-1 sm:flex-initial px-3.5 py-2.5 bg-white/10 hover:bg-white/20 border border-white/15 text-white font-bold text-xs uppercase tracking-wider rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap"
+                    title="Upload local video file from computer"
+                  >
+                    <Upload className="w-3.5 h-3.5 text-[#00FF9D]" />
+                    <span>Upload</span>
+                    <input type="file" accept="video/*" onChange={handleLocalFileUpload} className="hidden" />
+                  </label>
+                </div>
               </div>
 
-              {/* Quick Presets */}
+              {/* Quick Presets & Detected Platform Badge */}
               <div className="flex flex-wrap items-center gap-2 pt-1">
-                <span className="text-[10px] text-white/40 uppercase font-bold">Quick Presets:</span>
+                <span className="text-[10px] text-white/40 uppercase font-bold">Platform:</span>
                 <button
                   onClick={() => {
                     const u = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
                     setVideoUrl(u);
-                    processSocialUrl(u);
                   }}
-                  className="px-2.5 py-1 rounded-lg bg-[#16161A] hover:bg-white/10 border border-white/10 text-[10px] font-bold text-rose-400"
+                  className={`px-2.5 py-1 rounded-lg border text-[10px] font-bold transition-all flex items-center gap-1 ${
+                    detectedPlatform === 'youtube'
+                      ? 'bg-rose-500/20 border-rose-500 text-rose-300 ring-2 ring-rose-500/50 shadow-md shadow-rose-500/20'
+                      : 'bg-[#16161A] hover:bg-white/10 border-white/10 text-rose-400'
+                  }`}
                 >
                   🔴 YouTube
                 </button>
@@ -875,9 +885,12 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
                   onClick={() => {
                     const u = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4';
                     setVideoUrl(u);
-                    processSocialUrl(u);
                   }}
-                  className="px-2.5 py-1 rounded-lg bg-[#16161A] hover:bg-white/10 border border-white/10 text-[10px] font-bold text-cyan-400"
+                  className={`px-2.5 py-1 rounded-lg border text-[10px] font-bold transition-all flex items-center gap-1 ${
+                    detectedPlatform === 'tiktok'
+                      ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300 ring-2 ring-cyan-500/50 shadow-md shadow-cyan-500/20'
+                      : 'bg-[#16161A] hover:bg-white/10 border-white/10 text-cyan-400'
+                  }`}
                 >
                   🎵 TikTok Reel
                 </button>
@@ -885,9 +898,12 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
                   onClick={() => {
                     const u = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4';
                     setVideoUrl(u);
-                    processSocialUrl(u);
                   }}
-                  className="px-2.5 py-1 rounded-lg bg-[#16161A] hover:bg-white/10 border border-white/10 text-[10px] font-bold text-pink-400"
+                  className={`px-2.5 py-1 rounded-lg border text-[10px] font-bold transition-all flex items-center gap-1 ${
+                    detectedPlatform === 'instagram'
+                      ? 'bg-pink-500/20 border-pink-500 text-pink-300 ring-2 ring-pink-500/50 shadow-md shadow-pink-500/20'
+                      : 'bg-[#16161A] hover:bg-white/10 border-white/10 text-pink-400'
+                  }`}
                 >
                   📸 Instagram Reel
                 </button>
@@ -895,9 +911,12 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
                   onClick={() => {
                     const u = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4';
                     setVideoUrl(u);
-                    processSocialUrl(u);
                   }}
-                  className="px-2.5 py-1 rounded-lg bg-[#16161A] hover:bg-white/10 border border-white/10 text-[10px] font-bold text-blue-400"
+                  className={`px-2.5 py-1 rounded-lg border text-[10px] font-bold transition-all flex items-center gap-1 ${
+                    detectedPlatform === 'facebook'
+                      ? 'bg-blue-500/20 border-blue-500 text-blue-300 ring-2 ring-blue-500/50 shadow-md shadow-blue-500/20'
+                      : 'bg-[#16161A] hover:bg-white/10 border-white/10 text-blue-400'
+                  }`}
                 >
                   📘 Facebook Clip
                 </button>
@@ -941,7 +960,7 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
                   <div>
                     <h3 className="text-sm font-extrabold text-white">No Reaction Video Loaded</h3>
                     <p className="text-xs text-white/50 max-w-sm mt-1">
-                      Paste a YouTube, TikTok, Instagram, or Facebook link above and click <span className="text-[#00FF9D] font-bold">Paste</span> or <span className="text-[#00FF9D] font-bold">Load</span>.
+                      Paste a YouTube, TikTok, Instagram, or Facebook link above or click <span className="text-[#00FF9D] font-bold">Paste</span>.
                     </p>
                   </div>
                 </div>
@@ -951,8 +970,12 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
                   src={resolvedVideoSrc || embeddedEmbedUrl}
                   controls
                   loop
+                  autoPlay
+                  muted
                   playsInline
                   crossOrigin="anonymous"
+                  onLoadedMetadata={(e) => e.currentTarget.play().catch(() => {})}
+                  onCanPlay={(e) => e.currentTarget.play().catch(() => {})}
                   className="w-full h-full object-contain bg-black"
                 />
               )

@@ -16,35 +16,35 @@ export const Header: React.FC<HeaderProps> = ({
   recordingsCount,
 }) => {
   return (
-    <header id="app-header" className="sticky top-0 z-40 bg-[#0F0F12]/95 backdrop-blur-md border-b border-white/10 px-4 lg:px-8 py-3 transition-all">
-      <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+    <header id="app-header" className="sticky top-0 z-40 bg-[#0F0F12]/95 backdrop-blur-md border-b border-white/10 px-3 sm:px-6 py-2.5 transition-all overflow-x-hidden">
+      <div className="max-w-7xl mx-auto flex items-center justify-between gap-2">
         {/* Brand */}
         <div
           id="brand-logo"
           onClick={() => setActiveTab('landing')}
-          className="flex items-center gap-3 cursor-pointer group"
+          className="flex items-center gap-2 cursor-pointer group shrink-0"
         >
-          <div className="w-8 h-8 bg-gradient-to-br from-[#00FF9D] to-[#00A3FF] rounded-lg flex items-center justify-center p-0.5 shadow-md shadow-[#00FF9D]/10 group-hover:scale-105 transition-transform">
-            <div className="w-4 h-4 border-2 border-black rounded-sm bg-black/20 flex items-center justify-center">
-              <div className="w-1.5 h-1.5 bg-black rounded-full" />
+          <div className="w-7 h-7 sm:w-8 sm:h-8 bg-gradient-to-br from-[#00FF9D] to-[#00A3FF] rounded-lg flex items-center justify-center p-0.5 shadow-md shadow-[#00FF9D]/10 group-hover:scale-105 transition-transform">
+            <div className="w-3.5 h-3.5 sm:w-4 sm:h-4 border-2 border-black rounded-sm bg-black/20 flex items-center justify-center">
+              <div className="w-1 sm:w-1.5 h-1 sm:h-1.5 bg-black rounded-full" />
             </div>
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-lg text-white tracking-tight">LocalLoom</span>
-              <span className="px-2 py-0.5 rounded-full border border-[#00FF9D]/30 bg-[#00FF9D]/10 text-[#00FF9D] text-[10px] font-bold uppercase tracking-wider">
+            <div className="flex items-center gap-1.5">
+              <span className="font-extrabold text-base sm:text-lg text-white tracking-tight">LocalLoom</span>
+              <span className="hidden xs:inline-block px-1.5 sm:px-2 py-0.5 rounded-full border border-[#00FF9D]/30 bg-[#00FF9D]/10 text-[#00FF9D] text-[9px] sm:text-[10px] font-bold uppercase tracking-wider">
                 100% LOCAL
               </span>
             </div>
           </div>
         </div>
 
-        {/* Navigation Tabs */}
+        {/* Navigation Tabs (Desktop) */}
         <nav id="nav-tabs" className="hidden md:flex items-center gap-1 bg-[#16161A] p-1 rounded-full border border-white/10 text-xs font-semibold text-white/60">
           <button
             id="tab-landing-btn"
             onClick={() => setActiveTab('landing')}
-            className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
+            className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
               activeTab === 'landing'
                 ? 'bg-white/10 text-[#00FF9D] border border-[#00FF9D]/30'
                 : 'hover:text-white'
@@ -57,7 +57,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             id="tab-recorder-btn"
             onClick={() => setActiveTab('recorder')}
-            className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
+            className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
               activeTab === 'recorder'
                 ? 'bg-white/10 text-[#00FF9D] border border-[#00FF9D]/30'
                 : 'hover:text-white'
@@ -70,7 +70,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             id="tab-library-btn"
             onClick={() => setActiveTab('library')}
-            className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 relative ${
+            className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 relative ${
               activeTab === 'library'
                 ? 'bg-white/10 text-[#00FF9D] border border-[#00FF9D]/30'
                 : 'hover:text-white'
@@ -88,7 +88,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             id="tab-extension-btn"
             onClick={() => setActiveTab('extension')}
-            className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
+            className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
               activeTab === 'extension'
                 ? 'bg-white/10 text-[#00FF9D] border border-[#00FF9D]/30'
                 : 'hover:text-white'
@@ -100,13 +100,13 @@ export const Header: React.FC<HeaderProps> = ({
         </nav>
 
         {/* Action CTAs */}
-        <div id="header-actions" className="flex items-center gap-2.5">
+        <div id="header-actions" className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
           <button
             id="btn-quick-record"
             onClick={onQuickRecord}
-            className="px-4 py-2 bg-[#00FF9D] text-black rounded-full font-extrabold text-xs uppercase tracking-widest hover:bg-[#00FF9D]/90 transition-all shadow-lg shadow-[#00FF9D]/20 flex items-center gap-2 active:scale-95"
+            className="px-3 sm:px-4 py-1.5 sm:py-2 bg-[#00FF9D] text-black rounded-full font-extrabold text-[10px] sm:text-xs uppercase tracking-widest hover:bg-[#00FF9D]/90 transition-all shadow-md shadow-[#00FF9D]/20 flex items-center gap-1.5 active:scale-95 whitespace-nowrap"
           >
-            <span className="w-2 h-2 rounded-full bg-black animate-pulse" />
+            <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-black animate-pulse" />
             <span>Start Recording</span>
           </button>
 
@@ -114,12 +114,44 @@ export const Header: React.FC<HeaderProps> = ({
             id="btn-download-extension-zip"
             onClick={() => downloadExtensionZip()}
             title="Download Chrome Extension .ZIP"
-            className="px-4 py-2 bg-white text-black rounded-full font-bold text-xs uppercase tracking-widest hover:bg-[#00FF9D] transition-colors flex items-center gap-1.5"
+            className="p-2 sm:px-3.5 sm:py-2 bg-white text-black rounded-full font-bold text-xs uppercase tracking-widest hover:bg-[#00FF9D] transition-colors flex items-center gap-1"
           >
             <Download className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Add to Chrome</span>
+            <span className="hidden sm:inline text-[10px] sm:text-xs">Add to Chrome</span>
           </button>
         </div>
+      </div>
+
+      {/* Mobile Navigation Bar */}
+      <div className="flex md:hidden items-center justify-around mt-2 pt-2 border-t border-white/10 text-[10px] font-bold">
+        <button
+          onClick={() => setActiveTab('landing')}
+          className={`flex items-center gap-1 px-2 py-1 rounded-lg ${activeTab === 'landing' ? 'text-[#00FF9D] bg-white/10' : 'text-white/60'}`}
+        >
+          <Sparkles className="w-3 h-3" />
+          <span>Home</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('recorder')}
+          className={`flex items-center gap-1 px-2 py-1 rounded-lg ${activeTab === 'recorder' ? 'text-[#00FF9D] bg-white/10' : 'text-white/60'}`}
+        >
+          <Monitor className="w-3 h-3" />
+          <span>Studio</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('library')}
+          className={`flex items-center gap-1 px-2 py-1 rounded-lg ${activeTab === 'library' ? 'text-[#00FF9D] bg-white/10' : 'text-white/60'}`}
+        >
+          <LayoutDashboard className="w-3 h-3" />
+          <span>Vault ({recordingsCount})</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('extension')}
+          className={`flex items-center gap-1 px-2 py-1 rounded-lg ${activeTab === 'extension' ? 'text-[#00FF9D] bg-white/10' : 'text-white/60'}`}
+        >
+          <Code2 className="w-3 h-3" />
+          <span>Extension</span>
+        </button>
       </div>
     </header>
   );
