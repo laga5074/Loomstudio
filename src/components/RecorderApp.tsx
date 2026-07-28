@@ -452,9 +452,27 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
         canvas.height = canvasHeight;
         const ctx = canvas.getContext('2d');
 
-        // Check if social video element is ready or if we need tab screen capture (for iframe embed or missing stream)
+        // Check if social video element is ready and non-tainted, or trigger tab screen capture for iframe embeds
+        let canDrawDirectVideo = false;
         if (mode === 'reaction') {
-          if (socialVideoRef.current && (socialVideoRef.current.videoWidth > 0 || socialVideoRef.current.readyState >= 1)) {
+          if (socialVideoRef.current && (socialVideoRef.current.videoWidth > 0 || socialVideoRef.current.readyState >= 1) && !embeddedEmbedUrl) {
+            try {
+              const testCanvas = document.createElement('canvas');
+              testCanvas.width = 1;
+              testCanvas.height = 1;
+              const testCtx = testCanvas.getContext('2d');
+              if (testCtx) {
+                testCtx.drawImage(socialVideoRef.current, 0, 0, 1, 1);
+                testCtx.getImageData(0, 0, 1, 1);
+                canDrawDirectVideo = true;
+              }
+            } catch (taintErr) {
+              console.warn('Social video canvas is tainted by CORS, activating tab screen capture fallback:', taintErr);
+              canDrawDirectVideo = false;
+            }
+          }
+
+          if (canDrawDirectVideo && socialVideoRef.current) {
             try {
               socialVideoRef.current.muted = false;
               await socialVideoRef.current.play();
@@ -463,24 +481,27 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
               console.warn('Auto play reaction video warning:', pErr);
             }
           } else if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
-            // Screen / Tab capture fallback for embedded iframe videos or unstreamable links
+            // Screen / Tab capture fallback for embedded iframe videos (YouTube, TikTok, Instagram, Facebook) or unstreamable links
             try {
               const displayStream = await navigator.mediaDevices.getDisplayMedia({
-                video: { displaySurface: 'browser' } as any,
+                video: {
+                  displaySurface: 'browser',
+                  width: { ideal: 1920 },
+                  height: { ideal: 1080 },
+                } as any,
                 audio: true,
-              });
+                preferCurrentTab: true,
+              } as any);
               screenStreamRef.current = displayStream;
 
-              let hiddenVid = screenVideoRef.current;
-              if (!hiddenVid) {
-                hiddenVid = document.createElement('video');
-                hiddenVid.autoplay = true;
-                hiddenVid.muted = true;
-                hiddenVid.playsInline = true;
-                screenVideoRef.current = hiddenVid;
+              if (screenVideoRef.current) {
+                screenVideoRef.current.srcObject = displayStream;
+                await screenVideoRef.current.play().catch(() => {});
               }
-              hiddenVid.srcObject = displayStream;
-              await hiddenVid.play().catch(() => {});
+
+              displayStream.getVideoTracks()[0].onended = () => {
+                stopRecording();
+              };
             } catch (dispErr) {
               console.warn('Tab screen capture fallback rejected or cancelled:', dispErr);
             }
@@ -521,7 +542,7 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
             }
           } else {
             // Reaction Mode: Draw social video element OR screen video element centered with contain fit
-            const activeVideoElem = (socialVideoRef.current && (socialVideoRef.current.videoWidth > 0 || socialVideoRef.current.readyState >= 1))
+            const activeVideoElem = (canDrawDirectVideo && socialVideoRef.current && (socialVideoRef.current.videoWidth > 0 || socialVideoRef.current.readyState >= 1))
               ? socialVideoRef.current
               : (screenVideoRef.current && (screenVideoRef.current.videoWidth > 0 || screenVideoRef.current.readyState >= 1))
                 ? screenVideoRef.current
@@ -1001,6 +1022,15 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
                 <p className="text-xs font-bold uppercase tracking-widest text-white/70">Initializing Reaction Stream...</p>
               </div>
             )}
+
+            {/* Hidden Video Element for Active Screen/Tab Share Capture */}
+            <video
+              ref={screenVideoRef}
+              autoPlay
+              muted
+              playsInline
+              className="fixed -top-[9999px] -left-[9999px] w-px h-px opacity-0 pointer-events-none"
+            />
 
             {/* Display for Social Reaction Video */}
             {mode === 'reaction' ? (
