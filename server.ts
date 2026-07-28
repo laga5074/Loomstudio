@@ -33,7 +33,7 @@ async function resolveDirectVideoMedia(rawUrl: string): Promise<string | null> {
   if (!url) return null;
 
   // Direct MP4 / media link
-  if (url.match(/\.(mp4|webm|m3u8|mov|avi)(\?.*)?$/i) || url.includes('gtv-videos-bucket') || url.includes('googleapis.com')) {
+  if (url.match(/\.(mp4|webm|m3u8|mov|avi)(\?.*)?$/i) || url.includes('gtv-videos-bucket') || url.includes('googleapis.com') || url.startsWith('blob:')) {
     return url;
   }
 
@@ -41,18 +41,22 @@ async function resolveDirectVideoMedia(rawUrl: string): Promise<string | null> {
   const ytMatch = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/);
   const videoId = ytMatch ? ytMatch[1] : null;
 
-  // Tier 1: Try Piped API if YouTube
+  // Tier 1: Try Piped API instances for YouTube
   if (videoId) {
     const pipedInstances = [
       'https://pipedapi.kavin.rocks',
       'https://api.piped.video',
-      'https://pipedapi.privacy.com.de'
+      'https://pipedapi.privacy.com.de',
+      'https://pipedapi.lunar.icu',
+      'https://pipedapi.tokhmi.xyz',
+      'https://pipedapi.moomoo.me',
+      'https://pipedapi.mha.fi'
     ];
     for (const inst of pipedInstances) {
       try {
         const pRes = await fetch(`${inst}/streams/${videoId}`, {
           headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-          signal: AbortSignal.timeout(3500)
+          signal: AbortSignal.timeout(3000)
         });
         if (pRes.ok) {
           const data: any = await pRes.json();
@@ -89,7 +93,7 @@ async function resolveDirectVideoMedia(rawUrl: string): Promise<string | null> {
           url: url,
           videoQuality: '720',
         }),
-        signal: AbortSignal.timeout(4000)
+        signal: AbortSignal.timeout(3500)
       });
       if (cRes.ok) {
         const cData: any = await cRes.json();
@@ -111,13 +115,14 @@ async function resolveDirectVideoMedia(rawUrl: string): Promise<string | null> {
       'https://inv.tux.pizza',
       'https://invidious.nerdvpn.de',
       'https://yt.drgnz.club',
-      'https://invidious.drgns.space'
+      'https://inv.nadeko.net',
+      'https://invidious.flokinet.to'
     ];
     for (const node of invidiousNodes) {
       try {
         const nodeRes = await fetch(`${node}/api/v1/videos/${videoId}`, {
           headers: { 'User-Agent': 'Mozilla/5.0' },
-          signal: AbortSignal.timeout(3000)
+          signal: AbortSignal.timeout(2500)
         });
         if (nodeRes.ok) {
           const data: any = await nodeRes.json();
@@ -151,7 +156,7 @@ async function resolveDirectVideoMedia(rawUrl: string): Promise<string | null> {
   return null;
 }
 
-  // API 1: Resolve Video URL (YouTube, MP4, etc.)
+  // API 1: Resolve Video URL (YouTube, TikTok, Instagram, Facebook, MP4)
   app.get('/api/resolve-video', async (req, res) => {
     try {
       const videoUrl = (req.query.url as string || '').trim();
@@ -160,20 +165,77 @@ async function resolveDirectVideoMedia(rawUrl: string): Promise<string | null> {
         return;
       }
 
+      // Check YouTube
+      const ytMatch = videoUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/);
+      const ytVideoId = ytMatch ? ytMatch[1] : null;
+
+      // Check TikTok
+      const tiktokMatch = videoUrl.match(/tiktok\.com\/(?:@[\w.-]+\/video\/|v\/)?(\d+)/);
+      const tiktokId = tiktokMatch ? tiktokMatch[1] : null;
+
+      // Check Instagram
+      const igMatch = videoUrl.match(/instagram\.com\/(?:p|reel|tv)\/([A-Za-z0-9_-]+)/);
+      const igCode = igMatch ? igMatch[1] : null;
+
+      // Try direct media resolution
       const directMediaUrl = await resolveDirectVideoMedia(videoUrl);
+
       if (directMediaUrl) {
         res.json({
           type: 'direct',
           streamUrl: `/api/proxy-video?url=${encodeURIComponent(directMediaUrl)}`,
+          embedUrl: ytVideoId ? `https://www.youtube.com/embed/${ytVideoId}?autoplay=1&mute=0&enablejsapi=1` : '',
           originalUrl: videoUrl,
         });
         return;
       }
 
-      // Fallback
+      // Fallback embeds if direct media stream resolution failed or blocked
+      if (ytVideoId) {
+        res.json({
+          type: 'youtube_embed',
+          streamUrl: '',
+          embedUrl: `https://www.youtube.com/embed/${ytVideoId}?autoplay=1&mute=0&enablejsapi=1`,
+          originalUrl: videoUrl,
+        });
+        return;
+      }
+
+      if (igCode) {
+        res.json({
+          type: 'instagram_embed',
+          streamUrl: '',
+          embedUrl: `https://www.instagram.com/p/${igCode}/embed/`,
+          originalUrl: videoUrl,
+        });
+        return;
+      }
+
+      if (tiktokId) {
+        res.json({
+          type: 'tiktok_embed',
+          streamUrl: '',
+          embedUrl: `https://www.tiktok.com/embed/v2/${tiktokId}`,
+          originalUrl: videoUrl,
+        });
+        return;
+      }
+
+      if (videoUrl.includes('facebook.com') || videoUrl.includes('fb.watch')) {
+        res.json({
+          type: 'facebook_embed',
+          streamUrl: '',
+          embedUrl: `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(videoUrl)}&show_text=false`,
+          originalUrl: videoUrl,
+        });
+        return;
+      }
+
+      // Generic fallback
       res.json({
         type: 'proxy',
         streamUrl: `/api/proxy-video?url=${encodeURIComponent(videoUrl)}`,
+        embedUrl: '',
         originalUrl: videoUrl,
       });
     } catch (err: any) {

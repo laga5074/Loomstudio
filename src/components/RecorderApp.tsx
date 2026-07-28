@@ -261,9 +261,7 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
   // Helper to parse input social media URL into video stream via server proxy or direct stream
   const processSocialUrl = async (rawUrl: string) => {
     const trimmed = rawUrl.trim();
-    if (!trimmed) {
-      setEmbeddedEmbedUrl('');
-      setResolvedVideoSrc('');
+    if (!trimmed || trimmed.startsWith('local-file:')) {
       setIsResolvingVideo(false);
       return;
     }
@@ -276,21 +274,25 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
       const res = await fetch(`/api/resolve-video?url=${encodeURIComponent(trimmed)}`);
       if (res.ok) {
         const data = await res.json();
-        if (data.streamUrl) {
-          setResolvedVideoSrc(data.streamUrl);
-          setEmbeddedEmbedUrl(data.streamUrl);
-          setIsResolvingVideo(false);
-          return;
-        }
+        setResolvedVideoSrc(data.streamUrl || '');
+        setEmbeddedEmbedUrl(data.embedUrl || '');
+        setIsResolvingVideo(false);
+        return;
       }
     } catch (err) {
       console.warn('Backend video resolve warning, using client fallback:', err);
     }
 
     // Direct proxy fallback for external video links
-    const proxiedUrl = `/api/proxy-video?url=${encodeURIComponent(trimmed)}`;
-    setResolvedVideoSrc(proxiedUrl);
-    setEmbeddedEmbedUrl(proxiedUrl);
+    const ytMatch = trimmed.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/);
+    if (ytMatch && ytMatch[1]) {
+      setResolvedVideoSrc('');
+      setEmbeddedEmbedUrl(`https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&mute=0&enablejsapi=1`);
+    } else {
+      const proxiedUrl = `/api/proxy-video?url=${encodeURIComponent(trimmed)}`;
+      setResolvedVideoSrc(proxiedUrl);
+      setEmbeddedEmbedUrl('');
+    }
     setIsResolvingVideo(false);
   };
 
@@ -300,9 +302,9 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
     if (file) {
       videoAudioSourceRef.current = null;
       const objectUrl = URL.createObjectURL(file);
+      setVideoUrl(`local-file:${file.name}`);
       setResolvedVideoSrc(objectUrl);
-      setEmbeddedEmbedUrl(objectUrl);
-      setVideoUrl(file.name);
+      setEmbeddedEmbedUrl('');
       setIsResolvingVideo(false);
     }
   };
@@ -966,10 +968,10 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
                     </p>
                   </div>
                 </div>
-              ) : (
+              ) : resolvedVideoSrc ? (
                 <video
                   ref={socialVideoRef}
-                  src={resolvedVideoSrc || embeddedEmbedUrl}
+                  src={resolvedVideoSrc}
                   controls
                   loop
                   autoPlay
@@ -978,8 +980,32 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
                   crossOrigin="anonymous"
                   onLoadedMetadata={(e) => e.currentTarget.play().catch(() => {})}
                   onCanPlay={(e) => e.currentTarget.play().catch(() => {})}
+                  onError={() => {
+                    console.warn('Direct MP4 video stream failed to play, switching to embedded player fallback');
+                    setResolvedVideoSrc('');
+                  }}
                   className="w-full h-full object-contain bg-black"
                 />
+              ) : embeddedEmbedUrl ? (
+                <iframe
+                  src={embeddedEmbedUrl}
+                  title="Target Reaction Video"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowFullScreen
+                  className="w-full h-full border-0 bg-black"
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center p-8 text-center space-y-3 z-10">
+                  <div className="w-12 h-12 rounded-2xl bg-[#00FF9D]/10 border border-[#00FF9D]/30 flex items-center justify-center text-[#00FF9D]">
+                    <Film className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-extrabold text-white">No Reaction Video Loaded</h3>
+                    <p className="text-xs text-white/50 max-w-sm mt-1">
+                      Paste a YouTube, TikTok, Instagram, or Facebook link above or click <span className="text-[#00FF9D] font-bold">Paste</span> or <span className="text-[#00FF9D] font-bold">Upload</span>.
+                    </p>
+                  </div>
+                </div>
               )
             ) : (
               <video
