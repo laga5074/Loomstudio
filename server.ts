@@ -1,0 +1,227 @@
+import express from 'express';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { createServer as createViteServer } from 'vite';
+import ytdl from '@distube/ytdl-core';
+import http from 'http';
+import https from 'https';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+async function startServer() {
+  const app = express();
+  const PORT = 3000;
+
+  app.use(express.json());
+
+  // Enable CORS headers for all API requests
+  app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Range');
+    if (req.method === 'OPTIONS') {
+      res.sendStatus(200);
+      return;
+    }
+    next();
+  });
+
+  // API 1: Resolve Video URL (YouTube, MP4, etc.)
+  app.get('/api/resolve-video', async (req, res) => {
+    try {
+      const videoUrl = (req.query.url as string || '').trim();
+      if (!videoUrl) {
+        res.status(400).json({ error: 'URL parameter required' });
+        return;
+      }
+
+      // Check if YouTube link
+      const ytMatch = videoUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/);
+      if (ytMatch && ytMatch[1]) {
+        const videoId = ytMatch[1];
+        res.json({
+          type: 'youtube',
+          videoId,
+          streamUrl: `/api/stream-youtube?v=${videoId}`,
+          originalUrl: videoUrl,
+        });
+        return;
+      }
+
+      // Direct MP4 or video link
+      if (videoUrl.match(/\.(mp4|webm|m3u8|mov|avi)(\?.*)?$/i) || videoUrl.includes('googleapis.com') || videoUrl.includes('cdn')) {
+        res.json({
+          type: 'direct',
+          streamUrl: `/api/proxy-video?url=${encodeURIComponent(videoUrl)}`,
+          originalUrl: videoUrl,
+        });
+        return;
+      }
+
+      // Fallback
+      res.json({
+        type: 'proxy',
+        streamUrl: `/api/proxy-video?url=${encodeURIComponent(videoUrl)}`,
+        originalUrl: videoUrl,
+      });
+    } catch (err: any) {
+      console.error('Error resolving video:', err);
+      res.status(500).json({ error: err.message || 'Failed to resolve video' });
+    }
+  });
+
+  // API 2: Stream YouTube Video Directly with CORS (No redirects to prevent canvas taint)
+  app.get('/api/stream-youtube', async (req, res) => {
+    try {
+      const videoId = (req.query.v as string || '').trim();
+      if (!videoId) {
+        res.status(400).send('Missing video ID');
+        return;
+      }
+
+      const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
+      let formatUrl = '';
+
+      // Try 1: ytdl-core format extraction
+      try {
+        const info = await ytdl.getInfo(youtubeUrl);
+        let format = ytdl.chooseFormat(info.formats, { quality: 'highest', filter: 'videoandaudio' });
+        if (!format || !format.url) {
+          format = ytdl.chooseFormat(info.formats, { quality: 'highestvideo' });
+        }
+        if (format && format.url) {
+          formatUrl = format.url;
+        }
+      } catch (ytdlErr) {
+        console.warn('ytdl-core info failed, trying Invidious fallback:', ytdlErr);
+      }
+
+      // Try 2: Invidious public API fallback if ytdl-core failed
+      if (!formatUrl) {
+        const invidiousNodes = [
+          'https://inv.tux.pizza',
+          'https://invidious.nerdvpn.de',
+          'https://yt.drgnz.club',
+          'https://invidious.drgns.space'
+        ];
+
+        for (const node of invidiousNodes) {
+          try {
+            const nodeRes = await fetch(`${node}/api/v1/videos/${videoId}`, {
+              headers: { 'User-Agent': 'Mozilla/5.0' },
+              signal: AbortSignal.timeout(3000)
+            });
+            if (nodeRes.ok) {
+              const data: any = await nodeRes.json();
+              if (data.formatStreams && data.formatStreams.length > 0) {
+                // Find highest resolution stream
+                const stream = data.formatStreams.find((s: any) => s.qualityLabel === '1080p' || s.qualityLabel === '720p') || data.formatStreams[0];
+                if (stream && stream.url) {
+                  formatUrl = stream.url;
+                  break;
+                }
+              }
+            }
+          } catch (e) {
+            // try next node
+          }
+        }
+      }
+
+      // Stream the extracted format URL directly with CORS
+      if (formatUrl) {
+        streamRemoteUrl(formatUrl, req, res);
+        return;
+      }
+
+      // Fallback 3: Direct ytdl pipe stream
+      res.setHeader('Content-Type', 'video/mp4');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      ytdl(youtubeUrl, { quality: 'highestvideo', filter: 'videoandaudio' }).pipe(res);
+    } catch (err: any) {
+      console.error('Error streaming YouTube:', err);
+      res.status(500).send('Error streaming video');
+    }
+  });
+
+  // Helper to proxy video streams with Range headers and CORS
+  function streamRemoteUrl(targetUrl: string, req: express.Request, res: express.Response) {
+    try {
+      const parsedUrl = new URL(targetUrl);
+      const httpModule = parsedUrl.protocol === 'https:' ? https : http;
+
+      const headers: Record<string, string> = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      };
+
+      if (req.headers.range) {
+        headers['Range'] = req.headers.range;
+      }
+
+      const clientReq = httpModule.get(targetUrl, { headers }, (remoteRes) => {
+        // Handle redirects internally (follow up to 3 redirects)
+        if (remoteRes.statusCode && remoteRes.statusCode >= 300 && remoteRes.statusCode < 400 && remoteRes.headers.location) {
+          streamRemoteUrl(remoteRes.headers.location, req, res);
+          return;
+        }
+
+        res.statusCode = remoteRes.statusCode || 200;
+        
+        const allowedHeaders = ['content-type', 'content-length', 'content-range', 'accept-ranges'];
+        allowedHeaders.forEach((h) => {
+          if (remoteRes.headers[h]) {
+            res.setHeader(h, remoteRes.headers[h] as string);
+          }
+        });
+
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type');
+
+        remoteRes.pipe(res);
+      });
+
+      clientReq.on('error', (err) => {
+        console.error('Stream proxy error:', err);
+        if (!res.headersSent) {
+          res.status(500).send('Stream proxy error');
+        }
+      });
+    } catch (err: any) {
+      console.error('Invalid stream target URL:', err);
+      res.status(400).send('Invalid URL');
+    }
+  }
+
+  // API 3: Proxy Video with CORS headers so canvas can record without taint
+  app.get('/api/proxy-video', (req, res) => {
+    const targetUrl = req.query.url as string;
+    if (!targetUrl) {
+      res.status(400).send('Missing target URL');
+      return;
+    }
+    streamRemoteUrl(targetUrl, req, res);
+  });
+
+  // Serve Vite Dev Middleware or Static Production
+  if (process.env.NODE_ENV !== 'production') {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(__dirname, 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  }
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on http://0.0.0.0:${PORT}`);
+  });
+}
+
+startServer();

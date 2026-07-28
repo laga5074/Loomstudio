@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Screen & Web Page Capture Pro",
+  "version": "1.0.0",
+  "description": "Capture full screen, full page tall screenshots, or custom mouse selection crops on any browser tab.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "downloads"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}
