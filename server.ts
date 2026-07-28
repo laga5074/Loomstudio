@@ -27,6 +27,130 @@ async function startServer() {
     next();
   });
 
+// Helper to resolve raw social media/video URLs to direct playable MP4 streams
+async function resolveDirectVideoMedia(rawUrl: string): Promise<string | null> {
+  const url = rawUrl.trim();
+  if (!url) return null;
+
+  // Direct MP4 / media link
+  if (url.match(/\.(mp4|webm|m3u8|mov|avi)(\?.*)?$/i) || url.includes('gtv-videos-bucket') || url.includes('googleapis.com')) {
+    return url;
+  }
+
+  // Check YouTube match
+  const ytMatch = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/);
+  const videoId = ytMatch ? ytMatch[1] : null;
+
+  // Tier 1: Try Piped API if YouTube
+  if (videoId) {
+    const pipedInstances = [
+      'https://pipedapi.kavin.rocks',
+      'https://api.piped.video',
+      'https://pipedapi.privacy.com.de'
+    ];
+    for (const inst of pipedInstances) {
+      try {
+        const pRes = await fetch(`${inst}/streams/${videoId}`, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+          signal: AbortSignal.timeout(3500)
+        });
+        if (pRes.ok) {
+          const data: any = await pRes.json();
+          if (data.videoStreams && data.videoStreams.length > 0) {
+            const best = data.videoStreams.find((s: any) => s.mimeType?.includes('video/mp4') && (s.quality === '720p' || s.quality === '1080p'))
+              || data.videoStreams.find((s: any) => s.mimeType?.includes('video/mp4'))
+              || data.videoStreams[0];
+            if (best && best.url) {
+              return best.url;
+            }
+          }
+        }
+      } catch (e) {
+        // try next
+      }
+    }
+  }
+
+  // Tier 2: Try Cobalt API for Social Media links (YouTube, TikTok, Instagram, Facebook)
+  const cobaltInstances = [
+    'https://api.cobalt.tools/api/json',
+    'https://co.wuk.sh/api/json'
+  ];
+  for (const cInst of cobaltInstances) {
+    try {
+      const cRes = await fetch(cInst, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        },
+        body: JSON.stringify({
+          url: url,
+          videoQuality: '720',
+        }),
+        signal: AbortSignal.timeout(4000)
+      });
+      if (cRes.ok) {
+        const cData: any = await cRes.json();
+        if (cData.status === 'redirect' || cData.status === 'tunnel') {
+          if (cData.url) return cData.url;
+        }
+        if (cData.status === 'picker' && cData.picker && cData.picker[0]?.url) {
+          return cData.picker[0].url;
+        }
+      }
+    } catch (e) {
+      // try next
+    }
+  }
+
+  // Tier 3: Try Invidious nodes if YouTube
+  if (videoId) {
+    const invidiousNodes = [
+      'https://inv.tux.pizza',
+      'https://invidious.nerdvpn.de',
+      'https://yt.drgnz.club',
+      'https://invidious.drgns.space'
+    ];
+    for (const node of invidiousNodes) {
+      try {
+        const nodeRes = await fetch(`${node}/api/v1/videos/${videoId}`, {
+          headers: { 'User-Agent': 'Mozilla/5.0' },
+          signal: AbortSignal.timeout(3000)
+        });
+        if (nodeRes.ok) {
+          const data: any = await nodeRes.json();
+          if (data.formatStreams && data.formatStreams.length > 0) {
+            const stream = data.formatStreams.find((s: any) => s.qualityLabel === '720p' || s.qualityLabel === '1080p') || data.formatStreams[0];
+            if (stream && stream.url) {
+              return stream.url;
+            }
+          }
+        }
+      } catch (e) {
+        // try next
+      }
+    }
+
+    // Tier 4: Try ytdl-core
+    try {
+      const info = await ytdl.getInfo(`https://www.youtube.com/watch?v=${videoId}`);
+      let format = ytdl.chooseFormat(info.formats, { quality: 'highest', filter: 'videoandaudio' });
+      if (!format || !format.url) {
+        format = ytdl.chooseFormat(info.formats, { quality: 'highestvideo' });
+      }
+      if (format && format.url) {
+        return format.url;
+      }
+    } catch (e) {
+      // fallback
+    }
+  }
+
+  return null;
+}
+
   // API 1: Resolve Video URL (YouTube, MP4, etc.)
   app.get('/api/resolve-video', async (req, res) => {
     try {
@@ -36,24 +160,11 @@ async function startServer() {
         return;
       }
 
-      // Check if YouTube link
-      const ytMatch = videoUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/);
-      if (ytMatch && ytMatch[1]) {
-        const videoId = ytMatch[1];
-        res.json({
-          type: 'youtube',
-          videoId,
-          streamUrl: `/api/stream-youtube?v=${videoId}`,
-          originalUrl: videoUrl,
-        });
-        return;
-      }
-
-      // Direct MP4 or video link
-      if (videoUrl.match(/\.(mp4|webm|m3u8|mov|avi)(\?.*)?$/i) || videoUrl.includes('googleapis.com') || videoUrl.includes('cdn')) {
+      const directMediaUrl = await resolveDirectVideoMedia(videoUrl);
+      if (directMediaUrl) {
         res.json({
           type: 'direct',
-          streamUrl: `/api/proxy-video?url=${encodeURIComponent(videoUrl)}`,
+          streamUrl: `/api/proxy-video?url=${encodeURIComponent(directMediaUrl)}`,
           originalUrl: videoUrl,
         });
         return;
@@ -81,57 +192,9 @@ async function startServer() {
       }
 
       const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
-      let formatUrl = '';
-
-      // Try 1: ytdl-core format extraction
-      try {
-        const info = await ytdl.getInfo(youtubeUrl);
-        let format = ytdl.chooseFormat(info.formats, { quality: 'highest', filter: 'videoandaudio' });
-        if (!format || !format.url) {
-          format = ytdl.chooseFormat(info.formats, { quality: 'highestvideo' });
-        }
-        if (format && format.url) {
-          formatUrl = format.url;
-        }
-      } catch (ytdlErr) {
-        console.warn('ytdl-core info failed, trying Invidious fallback:', ytdlErr);
-      }
-
-      // Try 2: Invidious public API fallback if ytdl-core failed
-      if (!formatUrl) {
-        const invidiousNodes = [
-          'https://inv.tux.pizza',
-          'https://invidious.nerdvpn.de',
-          'https://yt.drgnz.club',
-          'https://invidious.drgns.space'
-        ];
-
-        for (const node of invidiousNodes) {
-          try {
-            const nodeRes = await fetch(`${node}/api/v1/videos/${videoId}`, {
-              headers: { 'User-Agent': 'Mozilla/5.0' },
-              signal: AbortSignal.timeout(3000)
-            });
-            if (nodeRes.ok) {
-              const data: any = await nodeRes.json();
-              if (data.formatStreams && data.formatStreams.length > 0) {
-                // Find highest resolution stream
-                const stream = data.formatStreams.find((s: any) => s.qualityLabel === '1080p' || s.qualityLabel === '720p') || data.formatStreams[0];
-                if (stream && stream.url) {
-                  formatUrl = stream.url;
-                  break;
-                }
-              }
-            }
-          } catch (e) {
-            // try next node
-          }
-        }
-      }
-
-      // Stream the extracted format URL directly with CORS
-      if (formatUrl) {
-        streamRemoteUrl(formatUrl, req, res);
+      const directMediaUrl = await resolveDirectVideoMedia(youtubeUrl);
+      if (directMediaUrl) {
+        streamRemoteUrl(directMediaUrl, req, res);
         return;
       }
 

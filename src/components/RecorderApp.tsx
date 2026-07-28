@@ -258,7 +258,7 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
     };
   }, [isDraggingPip, pipSize]);
 
-  // Helper to parse input social media URL into video stream via server proxy or iframe fallback
+  // Helper to parse input social media URL into video stream via server proxy or direct stream
   const processSocialUrl = async (rawUrl: string) => {
     const trimmed = rawUrl.trim();
     if (!trimmed) {
@@ -269,6 +269,7 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
     }
 
     setIsResolvingVideo(true);
+    videoAudioSourceRef.current = null;
 
     try {
       // Fetch resolved stream URL from Express backend
@@ -286,16 +287,6 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
       console.warn('Backend video resolve warning, using client fallback:', err);
     }
 
-    // Client side fallback for YouTube or direct video proxy
-    const ytMatch = trimmed.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/);
-    if (ytMatch && ytMatch[1]) {
-      const streamUrl = `/api/stream-youtube?v=${ytMatch[1]}`;
-      setResolvedVideoSrc(streamUrl);
-      setEmbeddedEmbedUrl(streamUrl);
-      setIsResolvingVideo(false);
-      return;
-    }
-
     // Direct proxy fallback for external video links
     const proxiedUrl = `/api/proxy-video?url=${encodeURIComponent(trimmed)}`;
     setResolvedVideoSrc(proxiedUrl);
@@ -307,6 +298,7 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
   const handleLocalFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      videoAudioSourceRef.current = null;
       const objectUrl = URL.createObjectURL(file);
       setResolvedVideoSrc(objectUrl);
       setEmbeddedEmbedUrl(objectUrl);
@@ -341,7 +333,17 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
   };
 
   useEffect(() => {
-    processSocialUrl(videoUrl);
+    const trimmed = videoUrl.trim();
+    if (!trimmed) {
+      setResolvedVideoSrc('');
+      setEmbeddedEmbedUrl('');
+      setIsResolvingVideo(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      processSocialUrl(trimmed);
+    }, 450);
+    return () => clearTimeout(timer);
   }, [videoUrl]);
 
   // Timer logic during active recording
@@ -742,7 +744,7 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
   };
 
   return (
-    <div id="recorder-app-container" className="max-w-7xl mx-auto p-4 lg:p-8 space-y-6 text-[#E0E0E6]">
+    <div id="recorder-app-container" className="max-w-7xl mx-auto px-3 sm:px-6 py-4 space-y-5 text-[#E0E0E6] overflow-x-hidden">
       {/* Hidden Canvas Compositor */}
       <canvas ref={canvasRef} className="hidden" />
 
