@@ -194,7 +194,7 @@ async function resolveDirectVideoMedia(rawUrl: string): Promise<string | null> {
       if (ytVideoId) {
         res.json({
           type: 'youtube_embed',
-          streamUrl: '',
+          streamUrl: `/api/stream-youtube?v=${ytVideoId}`,
           embedUrl: `https://www.youtube.com/embed/${ytVideoId}?autoplay=1&mute=0&enablejsapi=1`,
           originalUrl: videoUrl,
         });
@@ -204,7 +204,7 @@ async function resolveDirectVideoMedia(rawUrl: string): Promise<string | null> {
       if (igCode) {
         res.json({
           type: 'instagram_embed',
-          streamUrl: '',
+          streamUrl: `/api/proxy-video?url=${encodeURIComponent(videoUrl)}`,
           embedUrl: `https://www.instagram.com/p/${igCode}/embed/`,
           originalUrl: videoUrl,
         });
@@ -214,7 +214,7 @@ async function resolveDirectVideoMedia(rawUrl: string): Promise<string | null> {
       if (tiktokId) {
         res.json({
           type: 'tiktok_embed',
-          streamUrl: '',
+          streamUrl: `/api/proxy-video?url=${encodeURIComponent(videoUrl)}`,
           embedUrl: `https://www.tiktok.com/embed/v2/${tiktokId}`,
           originalUrl: videoUrl,
         });
@@ -224,7 +224,7 @@ async function resolveDirectVideoMedia(rawUrl: string): Promise<string | null> {
       if (videoUrl.includes('facebook.com') || videoUrl.includes('fb.watch')) {
         res.json({
           type: 'facebook_embed',
-          streamUrl: '',
+          streamUrl: `/api/proxy-video?url=${encodeURIComponent(videoUrl)}`,
           embedUrl: `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(videoUrl)}&show_text=false`,
           originalUrl: videoUrl,
         });

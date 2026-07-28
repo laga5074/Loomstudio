@@ -181,6 +181,17 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ recording, o
     URL.revokeObjectURL(url);
   };
 
+  // Handle Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   const formatTime = (sec: number) => {
     const m = String(Math.floor(sec / 60)).padStart(2, '0');
     const s = String(Math.floor(sec % 60)).padStart(2, '0');
@@ -188,24 +199,52 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ recording, o
   };
 
   return (
-    <div id="player-modal-backdrop" className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div id="player-modal-card" className="bg-[#0F0F12] border border-white/10 rounded-2xl max-w-6xl w-full p-6 shadow-2xl relative max-h-[95vh] overflow-y-auto flex flex-col gap-6 text-[#E0E0E6]">
+    <div
+      id="player-modal-backdrop"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+      className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-200"
+    >
+      {/* Floating Always-Visible Close Button (Top Right) */}
+      <button
+        onClick={onClose}
+        aria-label="Close popup"
+        className="fixed top-3 right-3 sm:top-5 sm:right-5 z-50 p-2.5 sm:p-3 rounded-full bg-[#16161A] text-white border border-white/20 hover:bg-[#00FF9D] hover:text-black hover:border-[#00FF9D] transition-all shadow-2xl active:scale-95 flex items-center justify-center cursor-pointer group"
+      >
+        <X className="w-5 h-5 group-hover:rotate-90 transition-transform duration-200" />
+      </button>
+
+      <div
+        id="player-modal-card"
+        className="bg-[#0F0F12] border border-white/10 rounded-2xl max-w-6xl w-full p-4 sm:p-6 shadow-2xl relative my-auto max-h-[92vh] overflow-y-auto flex flex-col gap-5 text-[#E0E0E6]"
+      >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-white/10 pb-4">
-          <div>
-            <span className="text-[10px] font-bold uppercase tracking-widest text-[#00FF9D]">MEDIA REVIEWVAULT</span>
-            <h2 className="text-xl font-extrabold text-white flex items-center gap-2 mt-0.5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-white/10 pb-4 gap-3 pr-10">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={onClose}
+                className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-[#00FF9D] hover:text-black text-white text-[11px] font-extrabold uppercase tracking-wider flex items-center gap-1 transition-all"
+              >
+                <span>← Back</span>
+              </button>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-[#00FF9D]">MEDIA REVIEWVAULT</span>
+            </div>
+            <h2 className="text-lg sm:text-xl font-extrabold text-white flex items-center gap-2 mt-0.5">
               <span>{recording.title}</span>
             </h2>
-            <p className="text-[10px] text-white/50 font-mono mt-0.5">
+            <p className="text-[10px] text-white/50 font-mono">
               {recording.resolution} • {recording.fps} FPS • Browser IndexedDB Stream
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
             <button
               onClick={handleDownloadVideo}
-              className="px-4 py-2 rounded-full bg-[#00FF9D] text-black font-extrabold text-xs uppercase tracking-wider transition-all shadow-md flex items-center gap-1.5"
+              className="flex-1 sm:flex-initial px-4 py-2 rounded-full bg-[#00FF9D] hover:bg-[#00e68d] text-black font-extrabold text-xs uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95"
             >
               <Download className="w-3.5 h-3.5 fill-black" />
               <span>Download MP4</span>
@@ -213,17 +252,10 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ recording, o
 
             <button
               onClick={handleDownloadJsonMetadata}
-              className="px-3.5 py-2 rounded-full bg-[#16161A] hover:bg-white/10 text-white font-bold text-xs uppercase tracking-wider border border-white/10 flex items-center gap-1.5"
+              className="px-3.5 py-2 rounded-full bg-[#16161A] hover:bg-white/10 text-white font-bold text-xs uppercase tracking-wider border border-white/10 flex items-center justify-center gap-1.5"
             >
               <FileText className="w-3.5 h-3.5 text-[#00FF9D]" />
               <span>Export Metadata</span>
-            </button>
-
-            <button
-              onClick={onClose}
-              className="p-2 rounded-full text-white/50 hover:text-white hover:bg-white/10 transition-colors"
-            >
-              <X className="w-5 h-5" />
             </button>
           </div>
         </div>
