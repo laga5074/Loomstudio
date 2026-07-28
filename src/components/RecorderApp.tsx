@@ -476,7 +476,7 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
         }
       }
 
-      // Auto play reaction video if present
+      // Auto play reaction video if present and wait for ready state
       if (mode === 'reaction') {
         if (!resolvedVideoSrc && !embeddedEmbedUrl) {
           throw new Error('Please paste a video URL or upload a video file to record a reaction.');
@@ -486,6 +486,12 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
             socialVideoRef.current.currentTime = 0;
             await socialVideoRef.current.play();
             setIsVideoPlaying(true);
+            // Wait briefly for video to load frames
+            let attempts = 0;
+            while (socialVideoRef.current.readyState < 2 && attempts < 20) {
+              await new Promise((r) => setTimeout(r, 100));
+              attempts++;
+            }
           } catch (pErr) {
             console.warn('Unmuted auto play blocked, playing muted for video stream:', pErr);
             try {
@@ -533,17 +539,17 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
           }
         } else {
           // Reaction / Both / Screen Modes
-          const activeVideoElem = (socialVideoRef.current && (socialVideoRef.current.videoWidth > 0 || socialVideoRef.current.readyState >= 1))
+          const activeVideoElem = (socialVideoRef.current && socialVideoRef.current.readyState >= 1)
             ? socialVideoRef.current
-            : (screenVideoRef.current && (screenVideoRef.current.videoWidth > 0 || screenVideoRef.current.readyState >= 1))
+            : (screenVideoRef.current && screenVideoRef.current.readyState >= 1)
               ? screenVideoRef.current
-              : null;
+              : socialVideoRef.current || screenVideoRef.current || null;
 
           if (activeVideoElem) {
             try {
               const vW = activeVideoElem.videoWidth || canvas.width;
               const vH = activeVideoElem.videoHeight || canvas.height;
-              const vAspect = vW / vH;
+              const vAspect = vW > 0 && vH > 0 ? vW / vH : (canvas.width / canvas.height);
               const cAspect = canvas.width / canvas.height;
 
               let dW = canvas.width;
@@ -568,8 +574,8 @@ export const RecorderApp: React.FC<RecorderAppProps> = ({ onRecordingSaved }) =>
             ctx.fillRect(0, 0, canvas.width, canvas.height);
           }
 
-          // Draw camera PIP overlay ONLY if active video background is present or mode is 'both' (NEVER duplicate camera in background)
-          if ((activeVideoElem || mode === 'both') && cameraPreviewRef.current && (cameraPreviewRef.current.videoWidth > 0 || cameraPreviewRef.current.readyState >= 1)) {
+          // Draw camera PIP overlay in reaction or both modes (NEVER duplicate camera in background)
+          if ((activeVideoElem || mode === 'both' || mode === 'reaction') && cameraPreviewRef.current && cameraPreviewRef.current.readyState >= 1) {
             try {
               const pipWidth = canvas.width * (pipSize / 100);
               const pipHeight = pipShape === 'circle' ? pipWidth : canvas.height * (pipSize / 100) * 0.75;
